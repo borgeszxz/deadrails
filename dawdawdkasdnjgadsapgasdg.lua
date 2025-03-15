@@ -427,11 +427,22 @@ Tabs.AimAssist:AddDropdown("AimPriority", {
     end
 })
 
--- Esp item
+-- Misc 
 local espItemsEnabled = false
 local espItems = {} 
 local maxItemESPDistance = 100 
 local runService = game:GetService("RunService")
+local antiAFKEnabled = false
+
+local function simulateMovement()
+    while antiAFKEnabled do
+        local humanoid = game.Players.LocalPlayer.Character and game.Players.LocalPlayer.Character:FindFirstChild("Humanoid")
+        if humanoid then
+            humanoid:Move(Vector3.new(0, 0, 0.1))
+        end
+        wait(5)
+    end
+end
 
 local ignoredItems = {
     "Werewolf",
@@ -439,6 +450,29 @@ local ignoredItems = {
     "Vampire",
     "Runner",
     "Walker",
+    "Wolf",
+    "Horse",
+    "RevolverOutlaw",
+    "ShotgunOutlaw",
+    "BarbedWire",
+    "Newspaper",
+    "Teapot",
+    "Top",
+    "Camera",
+    "Barrel",
+    "Rope",
+    "WantedPoster",
+    "Tomahawk",
+    "Vase",
+    "SilverPainting",
+    "Wheel",
+    "Book",
+    "Cavalry Sword",
+    "RunnerSoldier",
+    "ZombieSwordOfficer",
+    "CaptainPrescott",
+    "SheetMetal",
+    "Sadle"
 }
 
 Tabs.Misc:AddToggle("ESPItemsToggle", {
@@ -455,6 +489,8 @@ Tabs.Misc:AddToggle("ESPItemsToggle", {
     end
 })
 
+
+
 Tabs.Misc:AddSlider("MaxItemESPDistance", {
     Title = "Max ESP Distance",
     Description = "Set how far (in studs) items will be visible",
@@ -464,6 +500,18 @@ Tabs.Misc:AddSlider("MaxItemESPDistance", {
     Rounding = 0,
     Callback = function(value)
         maxItemESPDistance = value
+    end
+})
+
+Tabs.Misc:AddToggle("AntiAFKToggle", {
+    Title = "Anti-AFK",
+    Description = "Prevents being kicked for AFK",
+    Default = false,
+    Callback = function(value)
+        antiAFKEnabled = value
+        if antiAFKEnabled then
+            simulateMovement()
+        end
     end
 })
 
