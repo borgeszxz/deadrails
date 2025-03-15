@@ -17,6 +17,7 @@ local Tabs = {
     Main = Window:AddTab({ Title = "Welcome!", Icon = "home" }),
     AimAssist = Window:AddTab({ Title = "Aim Assist", Icon = "crosshair" }),
     ESP = Window:AddTab({ Title = "ESP", Icon = "eye" }),
+    Misc = Window:AddTab({ Title = "Misc", Icon = "share" }),
     Settings = Window:AddTab({ Title = "Settings", Icon = "settings" }),
 }
 
@@ -34,6 +35,10 @@ local showTracer = true
 local showName = true
 local showDistance = true
 local espDistanceLimit = 200
+
+local ignoreList = {
+    "Horse",
+}
 
 local espObjects = {}
 
@@ -107,7 +112,7 @@ local function UpdateESP()
                     
                     local distance = (playerRootPart.Position - rootPart.Position).Magnitude
 
-                    if distance > espDistanceLimit then
+                    if distance > espDistanceLimit or humanoid.Health <= 0 then
                         esp.name.Visible = false
                         esp.distance.Visible = false
                         esp.box.Visible = false
@@ -180,8 +185,10 @@ game:GetService("RunService").RenderStepped:Connect(function()
     if espEnabled then
         for _, npc in pairs(game.Workspace:GetDescendants()) do
             if npc:IsA("Model") and npc:FindFirstChild("Humanoid") and not game.Players:GetPlayerFromCharacter(npc) then
-                if not espObjects[npc] then
-                    CreateESP(npc)
+                if not table.find(ignoreList, npc.Name) and npc.Humanoid.Health > 0 then
+                    if not espObjects[npc] then
+                        CreateESP(npc)
+                    end
                 end
             end
         end
@@ -260,7 +267,7 @@ Tabs.ESP:AddSlider("ESPDistanceLimit", {
 
 
 local aimAssistEnabled = false
-
+local smoothness = 1.0  
 local player = game.Players.LocalPlayer
 local camera = game.Workspace.CurrentCamera
 
@@ -317,13 +324,19 @@ function getClosestNPC()
     local closestNPC = nil
     local shortestDistance = math.huge  
 
+    if not player or not player.Character or not player.Character:FindFirstChild("HumanoidRootPart") then
+        return nil
+    end
+
+    local playerPosition = player.Character.HumanoidRootPart.Position
+
     for _, obj in pairs(game.Workspace:GetDescendants()) do
         if obj:IsA("Humanoid") then
             local model = obj.Parent
             if model and not game.Players:GetPlayerFromCharacter(model) and obj.Health > 0 and model.Name ~= "Horse" then
                 local head = model:FindFirstChild("Head")  
                 if head then
-                    local worldDistance = (player.Character.HumanoidRootPart.Position - head.Position).Magnitude
+                    local worldDistance = (playerPosition - head.Position).Magnitude
                     local screenDistance = getScreenDistance(head.Position)
 
                     local isVisible = not visibleCheckEnabled or isNPCVisible(head)
@@ -351,11 +364,16 @@ end
 
 
 
+
 game:GetService("RunService").RenderStepped:Connect(function()
     if aimAssistEnabled then
         local target = getClosestNPC()
         if target then
-            camera.CFrame = CFrame.new(camera.CFrame.Position, target.Position)
+            local targetPosition = target.Position
+            local currentPosition = camera.CFrame.Position
+            local newCFrame = CFrame.new(currentPosition, targetPosition)
+            
+            camera.CFrame = camera.CFrame:Lerp(newCFrame, smoothness * 0.1)
         end
     end
 end)
@@ -366,6 +384,17 @@ Tabs.AimAssist:AddToggle("AimAssistToggle", {
     Default = false,
     Callback = function(value)
         aimAssistEnabled = value
+    end
+})
+Tabs.AimAssist:AddSlider("AimAssistSmoothness", {
+    Title = "Smoothness",
+    Description = "Set the smoothness of Aim Assist",
+    Default = 1.0,
+    Min = 0.1,
+    Max = 10.0,
+    Rounding = 1,
+    Callback = function(value)
+        smoothness = value
     end
 })
 Tabs.AimAssist:AddSlider("AimAssistRange", {
@@ -397,6 +426,154 @@ Tabs.AimAssist:AddDropdown("AimPriority", {
         aimPriority = value
     end
 })
+
+-- Esp item
+local espItemsEnabled = false
+local espItems = {} 
+local maxItemESPDistance = 100 
+local runService = game:GetService("RunService")
+
+local ignoredItems = {
+    "Werewolf",
+    "Parts",
+    "Vampire",
+    "Runner",
+    "Walker",
+}
+
+Tabs.Misc:AddToggle("ESPItemsToggle", {
+    Title = "Item ESP",
+    Description = "Enable/Disable ESP for collectible items",
+    Default = false,
+    Callback = function(state)
+        espItemsEnabled = state
+        if state then
+            espItemsFunction()
+        else
+            removeAllItemESP()
+        end
+    end
+})
+
+Tabs.Misc:AddSlider("MaxItemESPDistance", {
+    Title = "Max ESP Distance",
+    Description = "Set how far (in studs) items will be visible",
+    Default = 100,
+    Min = 10,
+    Max = 500,
+    Rounding = 0,
+    Callback = function(value)
+        maxItemESPDistance = value
+    end
+})
+
+function updateESPItems()
+    if not espItemsEnabled then return end
+    
+    local player = game.Players.LocalPlayer
+    local character = player and player.Character
+    local rootPart = character and character:FindFirstChild("HumanoidRootPart")
+
+    if not rootPart then return end
+
+    for obj, espData in pairs(espItems) do
+        if obj and obj.Parent then
+            local part = obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart")
+            if part then
+                local distance = (part.Position - rootPart.Position).Magnitude
+
+                if distance <= maxItemESPDistance then
+                    espData[2].Text = obj.Name .. " (" .. math.floor(distance) .. "m)"
+                else
+                    removeESP(obj)
+                end
+            end
+        end
+    end
+end
+
+function espItemsFunction()
+    runService.RenderStepped:Connect(updateESPItems) 
+
+    while espItemsEnabled do
+        local player = game.Players.LocalPlayer
+        local character = player and player.Character
+        local rootPart = character and character:FindFirstChild("HumanoidRootPart")
+
+        if not rootPart then
+            wait(0.1)
+            continue
+        end
+
+        for _, obj in ipairs(workspace:GetDescendants()) do
+            if obj:IsA("Model") or obj:IsA("Tool") then
+                if obj:IsDescendantOf(workspace:FindFirstChild("RuntimeItems") or workspace:FindFirstChild("GameItems") or workspace:FindFirstChild("Weapons")) 
+                and not table.find(ignoredItems, obj.Name) then
+                    local part = obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart")
+
+                    if part then
+                        local distance = (part.Position - rootPart.Position).Magnitude
+
+                        if distance <= maxItemESPDistance and not espItems[obj] then
+                            local highlight = Instance.new("Highlight")
+                            highlight.Name = "ItemESP"
+                            highlight.FillColor = Color3.fromRGB(255, 255, 0) 
+                            highlight.FillTransparency = 0.3
+                            highlight.OutlineColor = Color3.fromRGB(0, 0, 0) 
+                            highlight.OutlineTransparency = 0
+                            highlight.Parent = part
+                            
+                            local billboard = Instance.new("BillboardGui")
+                            billboard.Name = "ItemESP"
+                            billboard.Adornee = part
+                            billboard.Size = UDim2.new(0, 200, 0, 50)
+                            billboard.StudsOffset = Vector3.new(0, 2, 0)
+                            billboard.AlwaysOnTop = true
+                            billboard.Parent = part
+                            
+                            local textLabel = Instance.new("TextLabel", billboard)
+                            textLabel.Size = UDim2.new(1, 0, 1, 0)
+                            textLabel.BackgroundTransparency = 1
+                            textLabel.TextColor3 = Color3.fromRGB(255, 255, 0) 
+                            textLabel.TextStrokeTransparency = 0.5
+                            textLabel.Text = obj.Name .. " (" .. math.floor(distance) .. "m)" 
+                            textLabel.TextSize = 14  
+                            textLabel.Font = Enum.Font.GothamBold
+
+                            espItems[obj] = { highlight, textLabel }
+                        end
+                    end
+                end
+            end
+        end
+        wait(0.1) 
+    end
+end
+
+function removeESP(obj)
+    if espItems[obj] then
+        for _, part in pairs(espItems[obj]) do
+            if part and part.Parent then
+                part:Destroy()
+            end
+        end
+        espItems[obj] = nil
+    end
+end
+
+function removeAllItemESP()
+    for obj, esp in pairs(espItems) do
+        if esp then
+            for _, part in pairs(esp) do
+                if part and part.Parent then
+                    part:Destroy()
+                end
+            end
+        end
+    end
+    espItems = {} 
+end
+
 
 SaveManager:SetLibrary(Library)
 InterfaceManager:SetLibrary(Library)
